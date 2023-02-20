@@ -10,7 +10,7 @@ def get_owner(file_path):
         import pwd
         return pwd.getpwuid(os.stat(file_path).st_uid).pw_name
     elif operating_system == "Windows":
-        # It's a little more complex on windows.
+        # It"s a little more complex on windows.
         import win32security
         # Initialze an object which contains security related info about a file.
         sd = win32security.GetFileSecurity(file_path, win32security.OWNER_SECURITY_INFORMATION)
@@ -25,7 +25,7 @@ def get_group(file_path):
     import platform
     import os
     operating_system = platform.system()
-    # No output for Windows. There's no direct group equivalent there.
+    # No output for Windows. There"s no direct group equivalent there.
     if operating_system == "Windows":
         return "No goup on Windows ¯\_(ツ)_/¯"
     # Unixoide oses should do this:
@@ -33,6 +33,57 @@ def get_group(file_path):
     st = os.stat(file_path)  # General info about the file.
     gid = st.st_gid  # Gives group id.
     return grp.getgrgid(gid).gr_name  # Can be translated to group name.
+
+
+# Get a uid from a username.
+def get_uid(username):
+    import platform  # Gues the os.
+    operating_system = platform.system()
+    # Based on which os is in use, use different modules to determine user id.
+    try:
+
+        if operating_system == 'Linux':  # Unix-based system
+            import pwd  # Default module for that purpose.
+            user_info = pwd.getpwnam(username)
+            return user_info.pw_uid
+
+        elif operating_system == 'Windows':  # Windows system
+            import win32api  # Use os tools.
+            # Get an object representing user info.
+            user_info = win32api.GetNamedSecurityInfo(
+                f"USERNAME\\{username}", win32api.SE_OBJECT_TYPE_USER
+            )
+            # Extract user id from this object.
+            return user_info.GetSecurityDescriptorOwner().GetSid().GetPySID().GetBinaryForm()[2:-4]
+
+    # Catch errors. Might not be to common.
+    except (KeyError, ImportError):
+        print(f"User {username} does not exist on this system")
+        return -1  # Return impossible bogus value.
+
+
+# Get a group id from a username.
+def get_gid(groupname):
+    import platform  # Guess the os.
+    operating_system = platform.system()
+
+    # Based on which is this script is run on, execute different code.
+    try:
+
+        if operating_system == 'Linux':  # Unix-based system
+            import grp
+            group_info = grp.getgrnam(groupname)
+            return group_info.gr_gid
+
+        elif operating_system == 'Windows':  # Windows system
+            import win32net
+            group_info = win32net.NetLocalGroupGetInfo(None, groupname, 0)
+            return group_info['grgid']
+
+    # Pretty uncommon but still possible errors.
+    except (KeyError, ImportError):
+        print(f"Group {groupname} does not exist on this system")
+        return -1
 
 
 # Compute a checksum for a specific file.
@@ -75,6 +126,7 @@ def print_file_info(file_info):
     size = file_info["size"]
     owner = file_info["owner"]
     group = file_info["group"]
+    file_type = file_info["file_type"]
     creation_date = file_info["creation_date"]
     modification_date = file_info["modification_date"]
 
@@ -83,6 +135,7 @@ def print_file_info(file_info):
     print(f"File size [kB]: {size}")
     print(f"Owned by: {owner}")
     print(f"Belongs in: {group}")
+    print(f"File is of type: {file_type}")
     print(f"Created at: {creation_date}")
     print(f"Last modification at: {modification_date}")
     print("Hash algorithms and values:")
@@ -97,7 +150,7 @@ def print_file_info(file_info):
 def info_gathering(file_path, hashes, debug = False):
 
     import datetime  # Measure time and handle dates.
-    if debug: print(f'Gathering info about {file_path}.')
+    if debug: print(f"Gathering info about {file_path}.")
 
     # Take the starting time.
     start_time = datetime.datetime.now()
@@ -108,21 +161,21 @@ def info_gathering(file_path, hashes, debug = False):
 
     # First the path as quasi primary key.
     # Not much should go wrong here.
-    file_info['file_path'] = file_path
+    file_info["file_path"] = file_path
 
     # Add info about size.
     try:
         import os
-        file_info['size'] = os.path.getsize(file_path)
+        file_info["size"] = os.path.getsize(file_path)
     except Exception as e:  # Filesize cannot be determined for some reason.
         message = f"Unable to determine file size of {file_path}. {e}."
         print(message)
         errors.append(message)
-        file_info["size"] = "Undetermineable (check errors)"
+        file_info["size"] = -1
 
     # About the owner.
     try:
-        file_info['owner'] = get_owner(file_path)
+        file_info["owner"] = get_owner(file_path)
     except Exception as e:
         message = f"Unable to determine ownership of {file_path}. {e}."
         print(message)
@@ -131,7 +184,7 @@ def info_gathering(file_path, hashes, debug = False):
 
     # About the group.
     try:
-        file_info['group'] = get_group(file_path)
+        file_info["group"] = get_group(file_path)
     except Exception as e:
         message = f"Unable to determine group membership of {file_path}. {e}."
         print(message)
@@ -140,33 +193,33 @@ def info_gathering(file_path, hashes, debug = False):
 
     # About the creation date of the file.
     try:
-        file_info['creation_date_timestamp'] = os.path.getctime(file_path)
-        file_info['creation_date'] = datetime.datetime.fromtimestamp(
+        file_info["creation_date_timestamp"] = os.path.getctime(file_path)
+        file_info["creation_date"] = datetime.datetime.fromtimestamp(
             os.path.getctime(file_path)
-        ).strftime('%Y.%m.%d %H:%M:%S')
+        ).strftime("%Y.%m.%d %H:%M:%S")
     except Exception as e:
         message = f"Unable to creation date for {file_path}. {e}."
         print(message)
         errors.append(message)
-        file_info['creation_date_timestamp'] = "Undetermineable (check errors)"
-        file_info['creation_date'] = "Undetermineable (check errors)"
+        file_info["creation_date_timestamp"] = "Undetermineable (check errors)"
+        file_info["creation_date"] = "Undetermineable (check errors)"
 
     # About the last time the file was modified.
     try:
-        file_info['modification_date_timestamp'] = os.path.getmtime(file_path)
-        file_info['modification_date'] = datetime.datetime.fromtimestamp(
+        file_info["modification_date_timestamp"] = os.path.getmtime(file_path)
+        file_info["modification_date"] = datetime.datetime.fromtimestamp(
             os.path.getmtime(file_path)
-        ).strftime('%Y.%m.%d %H:%M:%S')
+        ).strftime("%Y.%m.%d %H:%M:%S")
     except Exception as e:
         message = f"Unable to modification date for {file_path}. {e}."
         print(message)
         errors.append(message)
-        file_info['modification_date_timestamp'] = "Undetermineable (check errors)"
+        file_info["modification_date_timestamp"] = "Undetermineable (check errors)"
         file_info["modification_date"] = "Undetermineable (check errors)"
 
     # Compute hashes.
     try:  # More likely to encounter an error here.
-        file_info['hashes'] = checksum(file_path, hashes)
+        file_info["hashes"] = checksum(file_path, hashes)
     except Exception as e:
         message = f"Unable to compute hashes for {file_path}. {e}."
         print(message)
@@ -177,33 +230,33 @@ def info_gathering(file_path, hashes, debug = False):
     import filetype  # Guess the file type from magic bytes.
     try:
         if filetype.guess(file_path) is None:
-            file_info['file_type'] = 'Undetermineable'
+            file_info["file_type"] = "Undetermineable"
         else:
-            file_info['file_type'] = str(filetype.guess(file_path))
+            file_info["file_type"] = str(filetype.guess_mime(file_path))
     except Exception as e:
         message = f"Unable to guess the file type of {file_path}. {e}."
         print(message)
         errors.append(message)
-        file_info['file_type'] = 'Undetermineable'
+        file_info["file_type"] = "Undetermineable"
 
     # Try and get the permissions.
     try:
         # Transfer to octal.
-        file_info['permissions'] = oct(os.stat(file_path).st_mode)[-3:]  # Grab the last three digits.
+        file_info["permissions"] = oct(os.stat(file_path).st_mode)[-3:]  # Grab the last three digits.
     except Exception as e:
         message = f"Unable to determine the permissions of {file_path}. {e}."
         print(message)
         errors.append(message)
-        file_info['permissions'] = 'Undetermineable'
+        file_info["permissions"] = -1
 
     # Take the stop time.
     stop_time = datetime.datetime.now()
     # Calculate the time difference.
     time_difference = stop_time - start_time
     # Write these three values in the file_info dict.
-    file_info['start_time'] = start_time.strftime('%Y.%m.%d %H:%M:%S')
-    file_info['stop_time'] = stop_time.strftime('%Y.%m.%d %H:%M:%S')
-    file_info['time_difference'] = time_difference.total_seconds()
+    file_info["start_time"] = start_time.strftime("%Y.%m.%d %H:%M:%S")
+    file_info["stop_time"] = stop_time.strftime("%Y.%m.%d %H:%M:%S")
+    file_info["time_difference"] = time_difference.total_seconds()
 
     # Add the errors to the file_info dictianory.
     file_info["errors"] = errors
@@ -221,25 +274,25 @@ def walk_dir(dir_path, dots, hashes, debug):
     for root, dirs, files in os.walk(dir_path, followlinks = True):
         if not dots:  # Do not include hidden directories.
             # Re-evaluate the dirctories list to omit dirs starting with a dot.
-            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
             # Process files.
         for f in files:
             # Build a complete absolute path.
             file_path = os.path.join(root, f)
             if not dots:  # Do not include hidden files.
-                if not f.startswith('.'):
+                if not f.startswith("."):
                     try:
                         file_data.append(info_gathering(file_path, hashes, debug))
                     except FileNotFoundError:
                         print(f"The file \"{f}\" was not found.")  # Do nothing when file is missing.
                     except Exception as e:
-                        print(f'Other Error while trying to gather file info. {e}.')
+                        print(f"Other Error while trying to gather file info. {e}.")
             else:  # DO include hidden files.
                 try:
                     file_data.append(info_gathering(file_path, hashes, debug))
                 except FileNotFoundError:
                     print(f"The file \"{f}\" was not found.")  # Do nothing when file is missing.
                 except Exception as e:
-                    print(f'Other Error while trying to gather file info. {e}.')
+                    print(f"Other Error while trying to gather file info. {e}.")
     # when all of this is finished, return the filled dictianory.
     return file_data

@@ -82,7 +82,7 @@ def main():
         # TODO: Neccessary to separate?
         connection_db_creation = sqlite3.connect(database_path)
         # Create a safe path pointing to the databse generation script.
-        sql_sourcefile_path = os.path.join(os.path.dirname(__file__), 'sql/create_database.sql')
+        sql_sourcefile_path = os.path.join(os.path.dirname(__file__), 'sql/CREATE_DATABASE.SQL')
 
         # Execute the instruction in this file.
         try:  # The file can be corrupt.
@@ -119,20 +119,55 @@ def main():
         # Every entry gets its own row.
         if args.debug:
             h.print_file_info(r)
-            print("Executing this query: (Quotes omitted)")
-            values_string = str(r["file_path"]) + ", " + str(r["size"]) + ", " + str(r["owner"]) + ", " + str(r["group"]) + ", " + str(r["creation_date_timestamp"]) + ", " + str(r["creation_date"]) + ", " + str(r["modification_date_timestamp"]) + ", " + str(r["modification_date"])
-            print(f"INSERT INTO result (id_scan, filepath, size, owner, group, creation_date_timestamp, creation_date, modification_date_timestamp, modification_date) VALUES ({values_string})")
         # Generate a new record.
         try:
+            # Check wether the filetype of the given result "r" is already logged.
+            cursor.execute("SELECT id_filetype FROM filetype WHERE filetype = ?", (r["file_type"],))
+            filetype_id = cursor.fetchone()
+            if args.debug: print(f"Filetype already logged with number {filetype_id}.")
+
+            # If not, log it and retrieve the id.
+            if filetype_id is None:
+                cursor.execute("INSERT INTO filetype (filetype) VALUES (?)", (r["file_type"], ))
+                filetype_id = cursor.lastrowid
+                if args.debug: print(f"New filetype detected. Logging with number {filetype_id}.")
+            # If the select statement above succeeded, filetype_id is a tuple.
+            else:
+                filetype_id = filetype_id[0]  # Use first and only entry.
+
+            # Do the same for users and groups. Log only new ones.
+            cursor.execute("SELECT id_user FROM `user` WHERE user_name = ?", (r["owner"], ))
+            user_id = cursor.fetchone()
+            if user_id is None:
+                cursor.execute(
+                        "INSERT INTO `user` (user_name, uid) VALUES (?,?)"
+                      , (r["owner"], h.get_uid(r["owner"]))
+                )
+                user_id = cursor.lastrowid
+            else:
+                user_id = user_id[0]
+
+            cursor.execute("SELECT id_group FROM `group` WHERE group_name = ?", (r["group"], ))
+            group_id = cursor.fetchone()
+            if group_id is None:
+                cursor.execute(
+                        "INSERT INTO `group` (group_name, gid) VALUES (?,?)"
+                      , (r["group"], h.get_gid(r["group"]))
+                )
+                group_id = cursor.lastrowid
+            else:
+                group_id = group_id[0]
+
+            # Then insert the data.
             cursor.execute(
-                "INSERT INTO result (id_scan, filepath, size, file_type, owner, `group`, creation_date_timestamp, creation_date, modification_date_timestamp, modification_date) VALUES (?,?,?,?,?,?,?,?,?,?)"
-            , (id_scan, r["file_path"], r["size"], r["file_type"], r["owner"], r["group"], r["creation_date_timestamp"], r["creation_date"], r["modification_date_timestamp"], r["modification_date"])
+                    "INSERT INTO result (id_scan, filepath, size, id_filetype, id_user, id_group, permissions, creation_date_timestamp, creation_date, modification_date_timestamp, modification_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+                , (id_scan, r["file_path"], r["size"], filetype_id, user_id, group_id, r["permissions"], r["creation_date_timestamp"], r["creation_date"], r["modification_date_timestamp"], r["modification_date"])
             )
         except Exception as e:
             message = f"Sorry. Can't write info to database. {e}."
             print(message)
             cursor.execute(
-                "INSERT INTO `error` (id_scan, message VALUES(?,?) )", (id_scan, message)
+                "INSERT INTO `error` (id_scan, message) VALUES(?,?)", (id_scan, message)
             )
 
         # Grab the last result id.
