@@ -117,8 +117,8 @@ def main():
     # Now enter all the results.
     for r in file_data:
         # Every entry gets its own row.
-        if args.debug:
-            h.print_file_info(r)
+        if args.debug: h.print_file_info(r)
+
         # Generate a new record.
         try:
             # Check wether the filetype of the given result "r" is already logged.
@@ -138,31 +138,51 @@ def main():
             # Do the same for users and groups. Log only new ones.
             cursor.execute("SELECT id_user FROM `user` WHERE user_name = ?", (r["owner"], ))
             user_id = cursor.fetchone()
+            if args.debug: print(f"User already logged with number {user_id}.")
             if user_id is None:
                 cursor.execute(
                         "INSERT INTO `user` (user_name, uid) VALUES (?,?)"
                       , (r["owner"], h.get_uid(r["owner"]))
                 )
                 user_id = cursor.lastrowid
+                if args.debug: print(f"New user detected. Logging with number {user_id}.")
             else:
                 user_id = user_id[0]
 
             cursor.execute("SELECT id_group FROM `group` WHERE group_name = ?", (r["group"], ))
             group_id = cursor.fetchone()
+            if args.debug: print(f"Group already logged with number {group_id}.")
             if group_id is None:
                 cursor.execute(
                         "INSERT INTO `group` (group_name, gid) VALUES (?,?)"
                       , (r["group"], h.get_gid(r["group"]))
                 )
                 group_id = cursor.lastrowid
+                if args.debug: print(f"New group detected. Logging with number {group_id}.")
             else:
                 group_id = group_id[0]
 
             # Then insert the data.
-            cursor.execute(
-                    "INSERT INTO result (id_scan, filepath, size, id_filetype, id_user, id_group, permissions, creation_date_timestamp, creation_date, modification_date_timestamp, modification_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-                , (id_scan, r["file_path"], r["size"], filetype_id, user_id, group_id, r["permissions"], r["creation_date_timestamp"], r["creation_date"], r["modification_date_timestamp"], r["modification_date"])
-            )
+            query_string_path = os.path.join(os.path.dirname(__file__), 'sql/INSERT_RECORD.SQL')
+            with open(query_string_path) as query_file:
+                query_string = query_file.read()
+                cursor.execute(
+                    query_string  # The query string is provided by another file.
+                    # The values have been prepared by this script.
+                  , (
+                        id_scan
+                      , r["file_path"]
+                      , r["size"]
+                      , filetype_id
+                      , user_id
+                      , group_id
+                      , r["permissions"]
+                      , r["creation_date_timestamp"]
+                      , r["creation_date"]
+                      , r["modification_date_timestamp"]
+                      , r["modification_date"]
+                    )
+                )
         except Exception as e:
             message = f"Sorry. Can't write info to database. {e}."
             print(message)
