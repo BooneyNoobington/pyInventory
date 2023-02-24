@@ -8,16 +8,27 @@ def get_owner(file_path):
     if operating_system == "Linux":
         # Use pwd to get user.
         import pwd
-        return pwd.getpwuid(os.stat(file_path).st_uid).pw_name
+        uid = os.stat(file_path).st_uid
+        account_name = pwd.getpwuid(uid).pw_name
     elif operating_system == "Windows":
         # It"s a little more complex on windows.
         import win32security
         # Initialze an object which contains security related info about a file.
         sd = win32security.GetFileSecurity(file_path, win32security.OWNER_SECURITY_INFORMATION)
         # Extract the owner id.
+        uid = sd.GetSecurityDescriptorOwner()
+        # Use it to retrieve the account name.
+        account_name = win32security.LookupAccountSid(None, uid)[0]
+        
+        # Get the owner SID from the security descriptor
         owner_sid = sd.GetSecurityDescriptorOwner()
-        # Return the corresponding user name to this id.
-        return win32security.LookupAccountSid(None, owner_sid)[0]
+        # Convert the owner SID to a string representation
+        uid = win32security.ConvertSidToStringSid(owner_sid)
+    
+    # Return both.
+    return account_name, uid
+
+
 
 # Function to guess the group of a file.
 def get_group(file_path):
@@ -27,63 +38,16 @@ def get_group(file_path):
     operating_system = platform.system()
     # No output for Windows. There"s no direct group equivalent there.
     if operating_system == "Windows":
-        return "No goup on Windows ¯\_(ツ)_/¯"
+        return "No goup on Windows ¯\_(ツ)_/¯", -1
     # Unixoide oses should do this:
     import grp  # Module for group name extraction.
     st = os.stat(file_path)  # General info about the file.
     gid = st.st_gid  # Gives group id.
-    return grp.getgrgid(gid).gr_name  # Can be translated to group name.
+    group_name = grp.getgrgid(gid).gr_name  # Can be translated to group name.
+	
+	# Return both.
+    return group_name, gid
 
-
-# Get a uid from a username.
-def get_uid(username):
-    import platform  # Gues the os.
-    operating_system = platform.system()
-    # Based on which os is in use, use different modules to determine user id.
-    try:
-
-        if operating_system == 'Linux':  # Unix-based system
-            import pwd  # Default module for that purpose.
-            user_info = pwd.getpwnam(username)
-            return user_info.pw_uid
-
-        elif operating_system == 'Windows':  # Windows system
-            import win32api  # Use os tools.
-            # Get an object representing user info.
-            user_info = win32api.GetNamedSecurityInfo(
-                f"USERNAME\\{username}", win32api.SE_OBJECT_TYPE_USER
-            )
-            # Extract user id from this object.
-            return user_info.GetSecurityDescriptorOwner().GetSid().GetPySID().GetBinaryForm()[2:-4]
-
-    # Catch errors. Might not be to common.
-    except (KeyError, ImportError):
-        print(f"User {username} does not exist on this system")
-        return -1  # Return impossible bogus value.
-
-
-# Get a group id from a username.
-def get_gid(groupname):
-    import platform  # Guess the os.
-    operating_system = platform.system()
-
-    # Based on which is this script is run on, execute different code.
-    try:
-
-        if operating_system == 'Linux':  # Unix-based system
-            import grp
-            group_info = grp.getgrnam(groupname)
-            return group_info.gr_gid
-
-        elif operating_system == 'Windows':  # Windows system
-            import win32net
-            group_info = win32net.NetLocalGroupGetInfo(None, groupname, 0)
-            return group_info['grgid']
-
-    # Pretty uncommon but still possible errors.
-    except (KeyError, ImportError):
-        print(f"Group {groupname} does not exist on this system")
-        return -1
 
 
 # Compute a checksum for a specific file.
@@ -175,21 +139,23 @@ def info_gathering(file_path, hashes, debug = False):
 
     # About the owner.
     try:
-        file_info["owner"] = get_owner(file_path)
+        file_info["owner"], file_info["uid"] = get_owner(file_path)
     except Exception as e:
         message = f"Unable to determine ownership of {file_path}. {e}."
         print(message)
         errors.append(message)
         file_info["owner"] = "Undetermineable (check errors)"
+        file_info["uid"] = -1
 
     # About the group.
     try:
-        file_info["group"] = get_group(file_path)
+        file_info["group"], file_info["gid"] = get_group(file_path)
     except Exception as e:
         message = f"Unable to determine group membership of {file_path}. {e}."
         print(message)
         errors.append(message)
         file_info["group"] = "Undetermineable (check errors)"
+        file_info["gid"] = -1
 
     # About the creation date of the file.
     try:

@@ -12,47 +12,47 @@ def main():
 
     # Setup command line arguments.
     parser = argparse.ArgumentParser(
-        description = 'Walk a directory and save file information to YAML file'
+        description = "Walk a directory and save file information to SQLite database"
     )
 
     # Positional argument 1 is the directory to be walked.
     parser.add_argument(
-          'dir_path'
-        , metavar = 'dir_path'
+          "dir_path"
+        , metavar = "dir_path"
         , type = str
-        , help = 'directory path'
+        , help = "directory path"
     )
 
     # Positional argument 2 is the export file (sqlite3 database).
     parser.add_argument(
-          'database_path'
-        , metavar = 'database_path'
+          "database_path"
+        , metavar = "database_path"
         , type = str
-        , help = 'output file path'
+        , help = "output file path"
     )
 
     # Include hidden files? Default is not to.
     parser.add_argument(
-          '--hidden'
-        , action = 'store_true'
+          "--hidden"
+        , action = "store_true"
         , default = False
-        , help = 'include hidden files and directories'
+        , help = "include hidden files and directories"
     )
 
     # Option to provide debug output.
     parser.add_argument(
-          '--debug'
-        , action = 'store_true'
+          "--debug"
+        , action = "store_true"
         , default = False
-        , help = 'give debug info about the scan.'
+        , help = "give debug info about the scan."
     )
 
     # Additional hashing algorithms. (You always get xxhash).
     parser.add_argument(
-          '--md5'
-        , action = 'store_true'
+          "--md5"
+        , action = "store_true"
         , default = False
-        , help = 'give debug info about the scan.'
+        , help = "also compute md5 hashes of the files"
     )
 
     # Store the result of this query into a sort of dictianory.
@@ -67,14 +67,14 @@ def main():
     database_path = args.database_path
 
     # Execute the search.
-    start_time = datetime.datetime.now().strftime('%Y.%m.%d %H:%M:%S')
+    start_time = datetime.datetime.now().strftime("%Y.%m.%d %H:%M:%S")
     file_data = h.walk_dir(dir_path, args.hidden, hashes, args.debug)
-    stop_time = datetime.datetime.now().strftime('%Y.%m.%d %H:%M:%S')
+    stop_time = datetime.datetime.now().strftime("%Y.%m.%d %H:%M:%S")
 
     # Write data to database.
-    print('Info gathering finished. Writing findings to database …')
+    print("Info gathering finished. Writing findings to database …")
 
-    # If the database file doesn't exist already, creaste it.
+    # If the database file doesn"t exist already, creaste it.
     # Execute the SQL statements in the file
     import os
     if not os.path.exists(database_path):
@@ -82,11 +82,11 @@ def main():
         # TODO: Neccessary to separate?
         connection_db_creation = sqlite3.connect(database_path)
         # Create a safe path pointing to the databse generation script.
-        sql_sourcefile_path = os.path.join(os.path.dirname(__file__), 'sql/CREATE_DATABASE.SQL')
+        sql_sourcefile_path = os.path.join(os.path.dirname(__file__), "sql/CREATE_DATABASE.SQL")
 
         # Execute the instruction in this file.
         try:  # The file can be corrupt.
-            with open(sql_sourcefile_path, 'r') as sql_sourcefile:
+            with open(sql_sourcefile_path, "r") as sql_sourcefile:
                 connection_db_creation.executescript(sql_sourcefile.read())
         except Exception as e:
             print(f"Error creating datbase: {e}. Aborting script ...")
@@ -142,7 +142,7 @@ def main():
             if user_id is None:
                 cursor.execute(
                         "INSERT INTO `user` (user_name, uid) VALUES (?,?)"
-                      , (r["owner"], h.get_uid(r["owner"]))
+                      , (r["owner"], r["uid"])
                 )
                 user_id = cursor.lastrowid
                 if args.debug: print(f"New user detected. Logging with number {user_id}.")
@@ -155,7 +155,7 @@ def main():
             if group_id is None:
                 cursor.execute(
                         "INSERT INTO `group` (group_name, gid) VALUES (?,?)"
-                      , (r["group"], h.get_gid(r["group"]))
+                      , (r["group"], r["gid"])
                 )
                 group_id = cursor.lastrowid
                 if args.debug: print(f"New group detected. Logging with number {group_id}.")
@@ -163,7 +163,7 @@ def main():
                 group_id = group_id[0]
 
             # Then insert the data.
-            query_string_path = os.path.join(os.path.dirname(__file__), 'sql/INSERT_RECORD.SQL')
+            query_string_path = os.path.join(os.path.dirname(__file__), "sql/INSERT_RECORD.SQL")
             with open(query_string_path) as query_file:
                 query_string = query_file.read()
                 cursor.execute(
@@ -218,5 +218,5 @@ def main():
 
 
 # Execute.
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
