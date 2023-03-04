@@ -9,9 +9,9 @@ CREATE TABLE IF NOT EXISTS "result" (
   ,	"id_user" INTEGER NOT NULL  -- Who owns the file?
   ,	"id_group" INTEGER NOT NULL   -- To which group does it belong? (Bogus value on Windows.)
   , "permissions" INTEGER NOT NULL  -- What permissions does the file have?
-  ,	"creation_date_timestamp" REAL NOT NULL  -- When was it created?
+  ,	"creation_date_timestamp" REAL -- When was it created?
   ,	"creation_date" TEXT NOT NULL  -- Same in readable format.
-  ,	"modification_date_timestamp" REAL NOT NULL  -- When was it mofified?
+  ,	"modification_date_timestamp" REAL -- When was it mofified?
   ,	"modification_date" TEXT NOT NULL  -- Same in reable format.
   -- TODO: Maybe add access date? Not always on record.
   , FOREIGN KEY ("id_scan") REFERENCES "scan" ("id_scan")  -- Link to the scan.
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS "scan" (
 	"id_scan" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT  -- Running number.
   ,	"target" TEXT NOT NULL  -- Which directory was the target for the scan?
   ,	"scan_start" TEXT NOT NULL  -- When was the scan iniated? (This time just as readable value.)
-  , "scan_stop"	TEXT NOT NULL  -- Same.
+  , "scan_stop"	TEXT  -- Can be NULL. This would indicate a failed / incomplete scan.
 );
 -- Various hash values for the same result / file can be stored here.
 CREATE TABLE IF NOT EXISTS "hash" (

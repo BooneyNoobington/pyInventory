@@ -1,3 +1,29 @@
+# Create a database if it doesn't already exists.
+def create_new_db(database_path, creation_script):
+    import os
+    import sqlite3
+
+    # Check wether the database file already exists.
+    if not os.path.exists(database_path):
+        # Even if it doesn't exist, you can already connect to it.
+        connection_db_creation = sqlite3.connect(database_path)
+
+        # Execute the instruction in this file.
+        try:  # The file can be corrupt.
+            with open(creation_script, "r") as creation_statement:
+                connection_db_creation.executescript(creation_statement.read())
+        except Exception as e:
+            print(f"Error creating datbase: {e}. Aborting script ...")
+            import sys
+            sys.exit(1)  # Exit with error.
+
+        # It seems safer to close the database here.
+        connection_db_creation.commit()
+        connection_db_creation.close()
+
+
+
+
 # Function to turn python datatypes into SQLite ones.
 def suggest_type(var):
     import datetime  # Determination of datatype.
@@ -23,26 +49,36 @@ def suggest_type(var):
         return "TEXT"
 
 
-# Function to test wether a record exists and return its id.
-# This function assumes, that there is already a database conneciton established.
-def test_record_existence(cursor, table, record, id_column = None):
-    # TODO: Implement likeness statements.
-    # TODO: Implement id_column autofind.
-    if id_column is None:
-        id_column = "id_" + table
 
-    # Guess a basic query.
-    query = f"SELECT {id_column} FROM {table} WHERE "
-    # Use the keys as column names and the values as column values.
-    for k, v in my_dict.items():
-        query += f"{k} = '{v}' AND "
-    query = query[:-5]  # remove the last 'AND'
+# Export the results of a query to a spreadsheet.
+def export_to_spreadsheet(cursor, statement, spreadsheet_file):
+    # Execute the statement and fetch the results.
+    cursor.execute(statement)
+    results = cursor.fetchall()
 
-    # Execute query.
-    cursor.execute(query)
+    # Build the table that should be exported in memory as a tuple.
+    # Use the cursor to get column headers (cursor.description).
+    sheet = [tuple([i[0] for i in cursor.description])] + results
 
-    # Get the id column value from that.
-    id_value = cursor.fetchone()[0]
+    # Split the spreadsheet_file string at every point, take the last element of the resulting list
+    # and convert the extension to lowercase for easier if statement conditions.
+    file_extension = spreadsheet_file.split(".")[-1].lower()
 
-
-    return id_value
+    # Depending on the file extension use different logic to export.
+    if spreadsheet_file.endswith('.ods'):\
+        # Straigtforward for Open Document format.
+        import pyexcel_ods
+        pyexcel_ods.save_data(spreadsheet_file, {'Sheet 1': sheet})
+    elif spreadsheet_file.endswith('.xlsx'):
+        # Use openpyxl package for export to excel.
+        import openpyxl
+        # Create a new workbook. TODO: Pretty much the same as the "sheet" tuple.
+        workbook = openpyxl.Workbook()
+        # Have this workbook choose an active sheet / tab.
+        workbook_sheet = workbook.active
+        # Fill it with column headers first, then with the info from "results".
+        workbook_sheet.append([i[0] for i in cursor.description])
+        for row in results:
+            workbook_sheet.append(row)
+        # Finally the actual export.
+        workbook.save(spreadsheet_file)

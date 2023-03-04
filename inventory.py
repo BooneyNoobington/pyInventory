@@ -74,29 +74,10 @@ def main():
     # Write data to database.
     print("Info gathering finished. Writing findings to database …")
 
-    # If the database file doesn"t exist already, creaste it.
-    # Execute the SQL statements in the file
-    import os
-    if not os.path.exists(database_path):
-        # Connect to the database (A different connection, just to create it.)
-        # TODO: Neccessary to separate?
-        connection_db_creation = sqlite3.connect(database_path)
-        # Create a safe path pointing to the databse generation script.
-        sql_sourcefile_path = os.path.join(os.path.dirname(__file__), "sql/CREATE_DATABASE.SQL")
-
-        # Execute the instruction in this file.
-        try:  # The file can be corrupt.
-            with open(sql_sourcefile_path, "r") as sql_sourcefile:
-                connection_db_creation.executescript(sql_sourcefile.read())
-        except Exception as e:
-            print(f"Error creating datbase: {e}. Aborting script ...")
-            import sys
-            sys.exit(1)  # Exit with error.
-
-        # TODO: Maybe neccessary, maybe not...
-        connection_db_creation.commit()
-        connection_db_creation.close()
-
+    # If the database file doesn"t exist already, create it.
+    si.create_new_db(
+        database_path, os.path.join(os.path.dirname(__file__), "sql/CREATE_DATABASE.SQL")
+    )
 
     # Connect to the database. For dropping results this time.
     connection = sqlite3.connect(database_path)
@@ -208,11 +189,8 @@ def main():
               , (id_scan, id_result, error)
             )
 
-    # Commit the changes and close the connection
-    connection.commit()
-
-    # When everything is done, close the connection.
-    connection.close()
+    connection.commit()  # Commit the changes.
+    connection.close()  # When everything is done, close the connection.
 
 
 
