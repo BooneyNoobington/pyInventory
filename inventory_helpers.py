@@ -111,10 +111,10 @@ def print_file_info(file_info):
 
 # --- More complex, program specific functions.
 # Gather information about a file.
-def info_gathering(file_path, hashes, debug = False):
+def info_gathering(cursor, file_path, hashes, id_scan, debug):
 
     import datetime  # Measure time and handle dates.
-    if debug: print(f"Gathering info about {file_path}.")
+    if debug: print(f"DEBUG Gathering info about {file_path}.")
 
     # Take the starting time.
     start_time = datetime.datetime.now()
@@ -227,12 +227,64 @@ def info_gathering(file_path, hashes, debug = False):
     # Add the errors to the file_info dictianory.
     file_info["errors"] = errors
 
-    # Return the dictianory.
-    return file_info
+    # Generate a new record.
+    write_info_to_db(file_info, cursor, id_scan, debug)
+
+
+
+# Write a dictianory (with subdicts) to a database.
+def write_info_to_db(file_info, cursor, id_scan, debug):
+
+    import os  # Path joining.
+
+    filetype_id = key_entry(cursor, 'filetype', 'filetype', file_info["file_type"], debug)
+    user_id     = key_entry(cursor, 'user', 'user_name', file_info["owner"], debug)
+    group_id    = key_entry(cursor, 'group', 'group_name', file_info["group"], debug)
+
+    # Insert the actual scanning data.
+    query_string_path = os.path.join(os.path.dirname(__file__), "sql/INSERT_RECORD.SQL")
+
+    # This part writes the findings to the database.
+    with open(query_string_path) as query_file:
+        query_string = query_file.read()
+        cursor.execute(
+                query_string
+              , (
+                      id_scan
+                    , file_info["file_path"]
+                    , file_info["size"]
+                    , filetype_id
+                    , user_id
+                    , group_id
+                    , file_info["permissions"]
+                    , file_info["creation_date_timestamp"]
+                    , file_info["creation_date"]
+                    , file_info["modification_date_timestamp"]
+                    , file_info["modification_date"]
+               )
+        )
+
+    # Grab the last result id.
+    id_result = cursor.lastrowid
+
+    # Now loop over all the hashes that have been computed.
+    for hash_dict in file_info["hashes"]:
+        cursor.execute(
+              "INSERT INTO `hash` (id_result, id_scan, hash_algorithm, hash_value) VALUES(?,?,?,?)"
+            , (id_result, id_scan, hash_dict["algorithm"], hash_dict["hash_value"])
+        )
+
+    # And loop over the errors.
+    for error in file_info["errors"]:
+        # TODO: Implement error codes.
+        cursor.execute(
+              "INSERT INTO `error` (id_scan, id_result, message) VALUES(?,?,?)"
+            , (id_scan, id_result, error)
+        )
 
 
 # Walk through a directory recursively.
-def walk_dir(dir_path, dots, hashes, debug):
+def walk_dir(cursor, id_scan, dir_path, dots, hashes, debug):
     # Again arm yourself against file not found errors.
     file_data = []  # Initialize an empty list.
     # Actual walk. Process directories and files alike.
@@ -248,17 +300,38 @@ def walk_dir(dir_path, dots, hashes, debug):
             if not dots:  # Do not include hidden files.
                 if not f.startswith("."):
                     try:
-                        file_data.append(info_gathering(file_path, hashes, debug))
+                        info_gathering(cursor, file_path, hashes, id_scan, debug)
                     except FileNotFoundError:
                         print(f"The file \"{f}\" was not found.")  # Do nothing when file is missing.
                     except Exception as e:
                         print(f"Other Error while trying to gather file info. {e}.")
             else:  # DO include hidden files.
                 try:
-                    file_data.append(info_gathering(file_path, hashes, debug))
+                    info_gathering(cursor, file_path, hashes, id_scan, debug)
                 except FileNotFoundError:
                     print(f"The file \"{f}\" was not found.")  # Do nothing when file is missing.
                 except Exception as e:
                     print(f"Other Error while trying to gather file info. {e}.")
-    # when all of this is finished, return the filled dictianory.
-    return file_data
+
+
+
+
+# Check wether keys exist and enter them if they don't.
+def key_entry(cursor, table, column, value, debug):
+    # Try to grab the id of a specifiy record.
+    # TODO(s): id column might have a different name and there can be more than one result.
+    cursor.execute(f"SELECT id_{table} FROM `{table}` WHERE {column} = ?", (value,))
+    # Fetch the result. Will be None of nothing is found.
+    entry_id = cursor.fetchone()[0]
+
+    if debug: print(f"DEBUG {table.capitalize()} already logged with number {entry_id}.")
+
+    # Nothing found for the specific query.
+    if entry_id is None:
+        # Insert the new record and capture the rowid.
+        cursor.execute(f"INSERT INTO `{table}` ({column}) VALUES (?)", (value,))
+        entry_id = cursor.lastrowid
+        if debug: print(f"DEBUG New {table} detected. Logging with number {entry_id}.")
+    else:
+        entry_id = entry_id[0]
+    return entry_id

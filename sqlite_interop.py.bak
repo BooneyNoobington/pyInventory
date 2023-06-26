@@ -52,34 +52,27 @@ def suggest_type(var):
 
 # Export the results of a query to a spreadsheet.
 def export_to_spreadsheet(cursor, statement, spreadsheet_file):
-    # Use tqdm to display a progress bar.
-    import tqdm
     # Execute the statement and fetch the results.
     cursor.execute(statement)
-    num_rows =cursor.rowcount  # Get total number of results.
 
     # Build the table that should be exported in memory as a tuple.
     # Use the cursor to get column headers (cursor.description).
     sheet = [tuple([i[0] for i in cursor.description])]
 
+    # Split the spreadsheet_file string at every point, take the last element of the resulting list
+    # and convert the extension to lowercase for easier if statement conditions.
+    file_extension = spreadsheet_file.split(".")[-1].lower()
+
     # Depending on the file extension use different logic to export.
     if spreadsheet_file.endswith(".ods"):
-        import pyexcel_ods
         # Straigtforward for Open Document format.
-        # Initialize a progress bar object.
-        with tqdm.tqdm(total=num_rows, desc="Export progress") as progress_bar:
-            # Repeat indefinetly.
-            while True:
-                # Get a single line of the queries result.
-                row = cursor.fetchone()
-                # Sooner or later all result rows will be fetched.
-                if not row: break  # Break the loop.
-                # In every iteration the results row needs to be appended to the worksheet.
-                sheet.append(row)
-                # Append the changed sheet to excel file.
-                pyexcel_ods.save_data(spreadsheet_file, {"Inventurergebnisse": sheet})
-                # Update the progress bar with one (because one line was processed).
-                progress_bar.update(1)
+        import pyexcel_ods
+        while True:
+            row = cursor.fetchone()
+            if not row:
+                break
+            sheet.append(row)
+            pyexcel_ods.save_data(spreadsheet_file, {"Sheet 1": sheet})
 
     elif spreadsheet_file.endswith(".xlsx") or spreadsheet_file.endswith(".xls"):
         # Shame the user for using obsolete file formats.
@@ -104,37 +97,3 @@ def export_to_spreadsheet(cursor, statement, spreadsheet_file):
     else:
         unknown_extension = spreadsheet_file.split('.')[-1].lower()
         print(f"No export logic for {unknown_extension}.")
-
-
-
-# Check if a given database has the correct buildup. That means
-# - All tables are there.
-# - All columns exist.
-# - Tables that can't be NULL have a NOT NULL constraint.
-# - For SQLite the type can be ingored. TODO: Make this an option.
-def check_database_buildup(cursor, creation_script, debug=False):
-    import re
-    # Open the database script fist.
-    with (open(creation_script)) as f:
-        creation_statement = f.read()
-
-    pattern = re.compile(r'CREATE TABLE IF NOT EXISTS? [`"]?(\w+)[`"]?\s*\(', re.IGNORECASE)
-
-    # Get all tables from that statement.
-    required_tables = pattern.findall(creation_statement)
-
-    # Get all tables that actually exist.
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    actual_tables = cursor.fetchall()
-    # Flatten the list-
-    actual_tables = [item for sublist in actual_tables  for item in sublist]
-
-    # Remove "system tables" like tables about the schema.
-
-    if actual_tables == required_tables:
-        if debug: print("All required tables exist.")
-        return True
-    else:
-        print("Not all tables exist in the SQLite database. These are missing:")
-        print(set(required_tables) - set(actual_tables))
-        return False

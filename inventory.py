@@ -55,6 +55,13 @@ def main():
         , help = "also compute md5 hashes of the files"
     )
 
+    # Name for the scan.
+    parser.add_argument(
+          "--scan-name"
+        , type = str
+        , default = "Manual scan"
+    )
+
     # Store the result of this query into a sort of dictianory.
     args = parser.parse_args()
 
@@ -66,128 +73,61 @@ def main():
     dir_path = args.dir_path
     database_path = args.database_path
 
-    # Execute the search.
-    start_time = datetime.datetime.now().strftime("%Y.%m.%d %H:%M:%S")
-    file_data = h.walk_dir(dir_path, args.hidden, hashes, args.debug)
-    stop_time = datetime.datetime.now().strftime("%Y.%m.%d %H:%M:%S")
+    # Call the inventorization function.
+    inventorize(dir_path, database_path, hashes, args.hidden, args.debug, args.scan_name)
 
-    # Write data to database.
-    print("Info gathering finished. Writing findings to database …")
+
+
+# Walk a directory and inventorize its contents.
+def inventorize(dir_path, database_path, hashes, hidden, debug, scan_name):
+
+    import inventory_helpers as h  # Various helper functions.
+    import sqlite_interop as si  # SQLite connection.
+    import os  # File creation.
+
+    # Execute the search.
+    start_time_dt = datetime.datetime.now()
+    start_time = start_time_dt.strftime("%Y.%m.%d %H:%M:%S")
+    if debug: print(f"DEBUG Started inventorization at {start_time}…")
 
     # If the database file doesn"t exist already, create it.
     si.create_new_db(
         database_path, os.path.join(os.path.dirname(__file__), "sql/CREATE_DATABASE.SQL")
     )
 
-    # Connect to the database. For dropping results this time.
+    # Connect to the database. Just for writing metadata about the scan.
     connection = sqlite3.connect(database_path)
 
     # Initialize the cursor to the database.
     cursor = connection.cursor()
 
     # Insert metadata about the scan itself to the database.
-    if args.debug: print("Noting that scan was executed.")
+    if debug: print("DEBUG Writing information about specific scan to datbase.")
     cursor.execute(
-        "INSERT INTO scan (target, scan_start, scan_stop) VALUES(?,?,?)"
-      , (dir_path, start_time, stop_time)
+        "INSERT INTO scan (target, scan_start, identifier) VALUES(?,?,?)"
+      , (dir_path, start_time, scan_name)
     )
 
     # Grab the latest id.
     id_scan = cursor.lastrowid
 
-    # Now enter all the results.
-    for r in file_data:
-        # Every entry gets its own row.
-        if args.debug: h.print_file_info(r)
+    # Loop over all files and dirs and write the gathered information in the database.
+    file_data = h.walk_dir(cursor, id_scan, dir_path, hidden, hashes, debug)
 
-        # Generate a new record.
-        try:
-            # Check wether the filetype of the given result "r" is already logged.
-            cursor.execute("SELECT id_filetype FROM filetype WHERE filetype = ?", (r["file_type"],))
-            filetype_id = cursor.fetchone()
-            if args.debug: print(f"Filetype already logged with number {filetype_id}.")
+    # When your'e here, measure how long it took.
+    stop_time_dt = datetime.datetime.now()
+    stop_time = stop_time_dt.strftime("%Y.%m.%d %H:%M:%S")
+    duration = stop_time_dt - start_time_dt
+    if debug: print(
+        f"DEBUG inventorization finished at {stop_time}. \n" +
+        f"Duration: {duration}."
+    )
 
-            # If not, log it and retrieve the id.
-            if filetype_id is None:
-                cursor.execute("INSERT INTO filetype (filetype) VALUES (?)", (r["file_type"], ))
-                filetype_id = cursor.lastrowid
-                if args.debug: print(f"New filetype detected. Logging with number {filetype_id}.")
-            # If the select statement above succeeded, filetype_id is a tuple.
-            else:
-                filetype_id = filetype_id[0]  # Use first and only entry.
-
-            # Do the same for users and groups. Log only new ones.
-            cursor.execute("SELECT id_user FROM `user` WHERE user_name = ?", (r["owner"], ))
-            user_id = cursor.fetchone()
-            if args.debug: print(f"User already logged with number {user_id}.")
-            if user_id is None:
-                cursor.execute(
-                        "INSERT INTO `user` (user_name, uid) VALUES (?,?)"
-                      , (r["owner"], r["uid"])
-                )
-                user_id = cursor.lastrowid
-                if args.debug: print(f"New user detected. Logging with number {user_id}.")
-            else:
-                user_id = user_id[0]
-
-            cursor.execute("SELECT id_group FROM `group` WHERE group_name = ?", (r["group"], ))
-            group_id = cursor.fetchone()
-            if args.debug: print(f"Group already logged with number {group_id}.")
-            if group_id is None:
-                cursor.execute(
-                        "INSERT INTO `group` (group_name, gid) VALUES (?,?)"
-                      , (r["group"], r["gid"])
-                )
-                group_id = cursor.lastrowid
-                if args.debug: print(f"New group detected. Logging with number {group_id}.")
-            else:
-                group_id = group_id[0]
-
-            # Then insert the data.
-            query_string_path = os.path.join(os.path.dirname(__file__), "sql/INSERT_RECORD.SQL")
-            with open(query_string_path) as query_file:
-                query_string = query_file.read()
-                cursor.execute(
-                    query_string  # The query string is provided by another file.
-                    # The values have been prepared by this script.
-                  , (
-                        id_scan
-                      , r["file_path"]
-                      , r["size"]
-                      , filetype_id
-                      , user_id
-                      , group_id
-                      , r["permissions"]
-                      , r["creation_date_timestamp"]
-                      , r["creation_date"]
-                      , r["modification_date_timestamp"]
-                      , r["modification_date"]
-                    )
-                )
-        except Exception as e:
-            message = f"Sorry. Can't write info to database. {e}."
-            print(message)
-            cursor.execute(
-                "INSERT INTO `error` (id_scan, message) VALUES(?,?)", (id_scan, message)
-            )
-
-        # Grab the last result id.
-        id_result = cursor.lastrowid
-
-        # Now loop over all the hashes.
-        for hash_dict in r["hashes"]:
-            cursor.execute(
-                "INSERT INTO hash (id_result, id_scan, hash_algorithm, hash_value) VALUES(?,?,?,?)"
-              , (id_result, id_scan, hash_dict["algorithm"], hash_dict["hash_value"])
-            )
-
-        # And loop over the errors.
-        for error in r["errors"]:
-            # TODO: Implement error codes.
-            cursor.execute(
-                "INSERT INTO `error` (id_scan, id_result, message) VALUES(?,?,?)"
-              , (id_scan, id_result, error)
-            )
+    # Update the stop time of the scan.
+    cursor.execute(
+        "UPDATE `scan` SET `scan_stop` = ? WHERE `id_scan` = ?"
+      , (stop_time, id_scan)
+    )
 
     connection.commit()  # Commit the changes.
     connection.close()  # When everything is done, close the connection.

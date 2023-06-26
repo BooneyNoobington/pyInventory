@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS "group" (
 -- A "meta data" table.
 CREATE TABLE IF NOT EXISTS "scan" (
 	"id_scan" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT  -- Running number.
+  , "identifier" TEXT NOT NULL  -- Reason / name for / of the scan.
   ,	"target" TEXT NOT NULL  -- Which directory was the target for the scan?
   ,	"scan_start" TEXT NOT NULL  -- When was the scan iniated? (This time just as readable value.)
   , "scan_stop"	TEXT  -- Can be NULL. This would indicate a failed / incomplete scan.

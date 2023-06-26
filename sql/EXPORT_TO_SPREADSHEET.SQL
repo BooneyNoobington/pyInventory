@@ -12,4 +12,5 @@ FROM				`result` r
 			ON		u.id_user = r.id_user
 			JOIN	`group` g
 			ON		g.id_group = r.id_group
-WHERE				h.`hash_algorithm` = 'xxhash'			
+WHERE				h.`hash_algorithm` = 'xxhash'
+			OR		h.`hash_algorithm` = 'None'  -- Avoid dropped lines.
